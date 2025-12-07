@@ -1,15 +1,27 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
+const Message = require('../models/Message');
 const { getAIResponse } = require('../services/aiService');
 
-// In-memory storage (replaces MongoDB)
-let messages = [];
+// In-memory fallback storage
+let messagesMemory = [];
 let messageIdCounter = 1;
 
+// Check if MongoDB is connected
+const isMongoConnected = () => mongoose.connection.readyState === 1;
+
 // Get all messages (chat history)
-router.get('/history', (req, res) => {
+router.get('/history', async (req, res) => {
   try {
-    res.json(messages);
+    if (isMongoConnected()) {
+      // Use MongoDB
+      const messages = await Message.find().sort({ timestamp: 1 });
+      res.json(messages);
+    } else {
+      // Use in-memory
+      res.json(messagesMemory);
+    }
   } catch (error) {
     console.error('Error fetching history:', error);
     res.status(500).json({ error: 'Failed to fetch chat history' });
@@ -25,26 +37,43 @@ router.post('/message', async (req, res) => {
       return res.status(400).json({ error: 'Message content is required' });
     }
 
-    // Create user message
-    const userMessage = {
-      _id: messageIdCounter++,
-      role: 'user',
-      content: content.trim(),
-      timestamp: new Date()
-    };
-    messages.push(userMessage);
+    let userMessage, aiMessage;
 
-    // Get AI response
-    const aiResponseContent = await getAIResponse(messages);
+    if (isMongoConnected()) {
+      // Use MongoDB
+      userMessage = await Message.create({
+        role: 'user',
+        content: content.trim()
+      });
 
-    // Create AI message
-    const aiMessage = {
-      _id: messageIdCounter++,
-      role: 'assistant',
-      content: aiResponseContent,
-      timestamp: new Date()
-    };
-    messages.push(aiMessage);
+      // Get all messages for context
+      const allMessages = await Message.find().sort({ timestamp: 1 });
+      const aiResponseContent = await getAIResponse(allMessages);
+
+      aiMessage = await Message.create({
+        role: 'assistant',
+        content: aiResponseContent
+      });
+    } else {
+      // Use in-memory
+      userMessage = {
+        _id: messageIdCounter++,
+        role: 'user',
+        content: content.trim(),
+        timestamp: new Date()
+      };
+      messagesMemory.push(userMessage);
+
+      const aiResponseContent = await getAIResponse(messagesMemory);
+
+      aiMessage = {
+        _id: messageIdCounter++,
+        role: 'assistant',
+        content: aiResponseContent,
+        timestamp: new Date()
+      };
+      messagesMemory.push(aiMessage);
+    }
 
     // Return both messages
     res.json({
@@ -58,10 +87,16 @@ router.post('/message', async (req, res) => {
 });
 
 // Clear chat history (optional utility endpoint)
-router.delete('/history', (req, res) => {
+router.delete('/history', async (req, res) => {
   try {
-    messages = [];
-    messageIdCounter = 1;
+    if (isMongoConnected()) {
+      // Clear MongoDB
+      await Message.deleteMany({});
+    } else {
+      // Clear in-memory
+      messagesMemory = [];
+      messageIdCounter = 1;
+    }
     res.json({ message: 'Chat history cleared' });
   } catch (error) {
     console.error('Error clearing history:', error);
