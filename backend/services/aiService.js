@@ -9,10 +9,17 @@ async function getAIResponse(conversationHistory) {
   // If API key is configured and valid, try Groq
   if (GROQ_API_KEY && GROQ_API_KEY !== 'your_groq_api_key_here') {
     try {
-      const messages = conversationHistory.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
+      // Add system prompt to ensure English responses
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a helpful AI assistant. Always respond in English, regardless of the language used in the question. Provide clear, accurate, and well-formatted answers.'
+        },
+        ...conversationHistory.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }))
+      ];
 
       const response = await axios.post(
         'https://api.groq.com/openai/v1/chat/completions',
