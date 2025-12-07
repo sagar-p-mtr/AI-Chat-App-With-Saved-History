@@ -24,10 +24,26 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
-  // Check API connection and fetch chat history on mount
+  // Save messages to localStorage whenever they change
   useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('chatHistory', JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  // Load chat history from localStorage on mount
+  useEffect(() => {
+    const savedMessages = localStorage.getItem('chatHistory');
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages);
+        setMessages(parsed);
+        console.log('✅ Loaded chat history from localStorage');
+      } catch (err) {
+        console.error('Error parsing saved messages:', err);
+      }
+    }
     checkAPIConnection();
-    fetchHistory();
   }, []);
 
   // Check if backend API is accessible
@@ -90,12 +106,19 @@ function App() {
   const clearHistory = async () => {
     if (window.confirm('Are you sure you want to clear all chat history?')) {
       try {
+        // Clear localStorage
+        localStorage.removeItem('chatHistory');
+        // Clear backend
         await axios.delete(`${API_URL}/chat/history`);
         setMessages([]);
         setError(null);
+        console.log('✅ Chat history cleared');
       } catch (err) {
         console.error('Error clearing history:', err);
-        setError('Failed to clear history.');
+        // Still clear frontend even if backend fails
+        localStorage.removeItem('chatHistory');
+        setMessages([]);
+        setError(null);
       }
     }
   };
